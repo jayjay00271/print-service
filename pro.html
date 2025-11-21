@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Drag & Drop Print Service — With History</title>
+<style>
+  :root{--bg:#f3f6fb;--card:#fff;--accent:#2563eb;--muted:#6b7280}
+  *{box-sizing:border-box}
+  body{font-family:Inter,system-ui,Arial;margin:18px;background:var(--bg);color:#0f172a}
+  .wrap{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:420px 1fr;gap:18px}
+  .card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 24px rgba(15,23,42,0.06)}
+  h2{margin:0 0 12px 0;font-size:1.05rem}
+  label{display:block;font-size:0.9rem;color:var(--muted);margin-bottom:6px}
+  input[type="text"], textarea, select{width:100%;padding:8px;border-radius:8px;border:1px solid #e6e9ef}
+  textarea{min-height:70px;resize:vertical}
+  .drop{border:2px dashed #dbeafe;border-radius:8px;padding:18px;text-align:center;color:var(--muted);cursor:pointer;background:linear-gradient(180deg,#fff,#fbfdff)}
+  .drop.dragover{border-color:var(--accent);background:#f0f7ff;color:#08306b}
+  .small{font-size:0.9rem;margin-top:8px;color:var(--muted)}
+  .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  button{padding:9px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:600}
+  .primary{background:var(--accent);color:#fff}
+  .secondary{background:#eef2ff;color:#08306b}
+  .danger{background:#ef4444;color:#fff}
+  .preview{padding:12px;border-radius:8px;border:1px solid #eef2f8;background:#fff;min-height:360px;overflow:auto}
+  .placeholder{text-align:center;color:var(--muted);padding:40px}
+  .file-meta{font-size:0.9rem;color:var(--muted);margin-top:8px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:8px;border-bottom:1px solid #eef2f8;text-align:left;font-size:0.9rem}
+  tr.row-hover:hover{background:#fbfdff;cursor:pointer}
+  .history-actions{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .tiny{font-size:0.85rem;padding:6px 8px}
+  @media (max-width:980px){.wrap{grid-template-columns:1fr;padding:10px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- LEFT: FORM, UPLOAD, ACTIONS -->
+  <div class="card">
+    <h2>Upload & Print — Drag & Drop</h2>
+
+    <label for="name">Customer Name</label>
+    <input id="name" placeholder="Juan Dela Cruz" type="text">
+
+    <label for="email">Email / Phone</label>
+    <input id="email" placeholder="+63 912 345 6789" type="text">
+
+    <label for="paper">Paper Size</label>
+    <select id="paper">
+      <option value="A4">A4 (210 × 297 mm)</option>
+      <option value="Letter">Letter (8.5 × 11 in)</option>
+      <option value="Legal">Legal (8.5 × 14 in)</option>
+    </select>
+
+    <label for="orient">Orientation</label>
+    <select id="orient">
+      <option value="portrait">Portrait</option>
+      <option value="landscape">Landscape</option>
+    </select>
+
+    <label class="small">Attach file (drag & drop or click)</label>
+    <div id="drop" class="drop" tabindex="0">
+      <div style="font-weight:700">Drop file here or click to choose</div>
+      <div class="small">Supports PDF and images (PNG/JPG). We'll preview it below.</div>
+      <input id="fileInput" type="file" accept="application/pdf,image/*" style="display:none">
+    </div>
+
+    <div class="file-meta" id="fileMeta" aria-live="polite"></div>
+
+    <label class="small" style="margin-top:12px">Special Instructions</label>
+    <textarea id="notes" placeholder="Any print instructions..."></textarea>
+
+    <div class="btns">
+      <button class="primary" id="genInvoice">Generate Invoice</button>
+      <button class="secondary" id="saveBtn">Save to History</button>
+      <button class="secondary" id="saveAndGenBtn">Save & Generate</button>
+      <button class="secondary" id="exportBtn">Export JSON</button>
+      <button class="secondary" id="importBtn">Import JSON</button>
+    </div>
+
+    <div class="small" style="margin-top:10px;color:var(--muted)">
+      Tip: Use <strong>Save</strong> to keep orders in history. Click a row to load it back into the form.
+    </div>
+  </div>
+
+  <!-- RIGHT: PREVIEW + HISTORY -->
+  <div class="card preview" id="previewArea">
+    <div id="placeholder" class="placeholder">
+      <div style="font-size:1rem;font-weight:600">Preview will appear here</div>
+      <div class="small">After uploading a file and clicking Generate Invoice you can print the file and invoice separately or together.</div>
+    </div>
+
+    <div id="invoiceAndFile" style="display:none"></div>
+
+    <div id="printButtons" style="display:none;margin-top:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="secondary tiny" id="printFileBtn">Print Attached File</button>
+        <button class="secondary tiny" id="printInvoiceBtn">Print Invoice Only</button>
+        <button class="primary tiny" id="printBothBtn">Print Invoice + File (2 pages)</button>
+      </div>
+    </div>
+
+    <hr style="margin:16px 0;border:none;border-top:1px solid #eef2f8">
+
+    <h3 style="margin:0 0 8px 0">Order History</h3>
+    <div class="history-actions">
+      <div class="small">Saved orders are stored in your browser (localStorage).</div>
+      <div style="flex:1"></div>
+      <button class="tiny secondary" id="clearHistoryBtn">Clear History</button>
+    </div>
+
+    <table id="historyTable" aria-label="history table">
+      <thead><tr><th>Date</th><th>Name</th><th>File</th><th>Paper</th><th>Actions</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Hidden file input for import -->
+<input type="file" id="importFile" accept="application/json" style="display:none"/>
+
+<script>
+/* ---------------- State ---------------- */
+let uploadedFile = null;
+let uploadedURL = null;
+const STORAGE_KEY = 'print_service_history_v1';
+
+/* ---------- DOM references ---------- */
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileMeta = document.getElementById('fileMeta');
+const previewArea = document.getElementById('previewArea');
+const placeholder = document.getElementById('placeholder');
+const invoiceArea = document.getElementById('invoiceAndFile');
+const printButtons = document.getElementById('printButtons');
+
+const historyBody = document.getElementById('historyBody');
+const saveBtn = document.getElementById('saveBtn');
+const genInvoiceBtn = document.getElementById('genInvoice');
+const saveAndGenBtn = document.getElementById('saveAndGenBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+/* ---------- Drag & Drop ---------- */
+;['dragenter','dragover','dragleave','drop'].forEach(e => drop.addEventListener(e, ev => ev.preventDefault()));
+drop.addEventListener('dragover', ()=> drop.classList.add('dragover'));
+drop.addEventListener('dragleave', ()=> drop.classList.remove('dragover'));
+drop.addEventListener('drop', e=> { drop.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); });
+drop.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', ()=> handleFile(fileInput.files[0]));
+
+/* ---------- File handling & preview ---------- */
+function handleFile(file){
+  if(!file) return;
+  const allowed = ['application/pdf','image/png','image/jpeg','image/jpg'];
+  if(!allowed.includes(file.type)){
+    alert('Unsupported file type. Use PDF or image (PNG/JPG).');
+    return;
+  }
+  uploadedFile = file;
+  if(uploadedURL) URL.revokeObjectURL(uploadedURL);
+  uploadedURL = URL.createObjectURL(file);
+  fileMeta.textContent = `Selected: ${file.name} — ${Math.round(file.size/1024)} KB`;
+  renderQuickPreview();
+}
+
+function renderQuickPreview(){
+  placeholder.style.display = 'none';
+  invoiceArea.style.display = 'block';
+  invoiceArea.innerHTML = '';
+  printButtons.style.display = 'none';
+  const box = document.createElement('div');
+  box.style.padding='10px';
+  box.style.border='1px dashed #e6eef8';
+  box.style.borderRadius='8px';
+  box.style.background='#fbfdff';
+  if(uploadedFile.type === 'application/pdf'){
+    box.innerHTML = `<div><strong>PDF loaded:</strong> ${uploadedFile.name}<div class="small">Click Generate Invoice to prepare print pages.</div></div>`;
+  } else {
+    const img = document.createElement('img');
+    img.src = uploadedURL;
+    img.style.maxWidth='100%'; img.style.borderRadius='6px'; img.style.marginTop='8px';
+    box.appendChild(img);
+  }
+  invoiceArea.appendChild(box);
+}
+
+/* ---------- History storage ---------- */
+function loadHistory(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return [];
+  try { return JSON.parse(raw); } catch(e){ return []; }
+}
+function saveHistoryArray(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); renderHistory(); }
+
+function addToHistory(entry){
+  const arr = loadHistory();
+  arr.unshift(entry); // newest first
+  // keep max 200 entries
+  if(arr.length>200) arr.length=200;
+  saveHistoryArray(arr);
+}
+
+/* ---------- Render history table ---------- */
+function renderHistory(){
+  const arr = loadHistory();
+  historyBody.innerHTML = '';
+  arr.forEach((item, idx) => {
+    const tr = document.createElement('tr');
+    tr.className = 'row-hover';
+    tr.innerHTML = `<td>${escapeHtml(item.date)}</td>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td>${escapeHtml(item.fileName || '—')}</td>
+                    <td>${escapeHtml(item.paper)} ${escapeHtml(item.orient)}</td>
+                    <td>
+                      <button class="tiny secondary" data-idx="${idx}" data-action="load">Load</button>
+                      <button class="tiny" style="background:#fde68a" data-idx="${idx}" data-action="print">Print</button>
+                      <button class="tiny danger" data-idx="${idx}" data-action="delete">Delete</button>
+                    </td>`;
+    historyBody.appendChild(tr);
+  });
+}
+
+/* ---------- Utility ---------- */
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowStr(){ return (new Date()).toLocaleString(); }
+
+/* ---------- Form actions: Save, Generate ---------- */
+saveBtn.addEventListener('click', ()=>{
+  const record = buildRecord();
+  if(!record) return;
+  addToHistory(record);
+  alert('Saved to history.');
+});
+
+saveAndGenBtn.addEventListener('click', ()=>{
+  const record = buildRecord();
+  if(!record) return;
+  addToHistory(record);
+  generateInvoiceFromRecord(record);
+});
+
+genInvoiceBtn.addEventListener('click', ()=>{
+  const record = buildRecord(true); // allow without saving file url
+  if(!record) return;
+  generateInvoiceFromRecord(record);
+});
+
+/* Build serializable record from form */
+function buildRecord(allowWithoutFile=false){
+  const name = document.getElementById('name').value || '';
+  const email = document.getElementById('email').value || '';
+  const paper = document.getElementById('paper').value;
+  const orient = document.getElementById('orient').value;
+  const notes = document.getElementById('notes').value || '';
+  if(!uploadedFile && !allowWithoutFile){
+    alert('Please upload a file first.');
+    return null;
+  }
+  // We cannot persist actual File objects to localStorage; instead store metadata and a dataURL for images only.
+  let fileData = null;
+  if(uploadedFile){
+    if(uploadedFile.type.startsWith('image/')) {
+      // convert image to dataURL synchronously via canvas using FileReader
+      // We'll do an async read and save only after read completes: provide callback alternative.
+      // For simplicity, prompt user to confirm save if conversion takes time.
+    }
+    fileData = {
+      name: uploadedFile.name,
+      type: uploadedFile.type,
+      size: uploadedFile.size,
+      // dataURL will be filled asynchronously for images
+    };
+  }
+  const base = { id: Date.now(), date: nowStr(), name, email, paper, orient, notes, fileMeta: fileData };
+
+  // If image: convert to dataURL and then save; if PDF: we cannot store heavy PDF in localStorage reliably so store metadata only.
+  if(uploadedFile && uploadedFile.type.startsWith('image/')){
+    // async convert then save
+    const reader = new FileReader();
+    reader.onload = function(evt){
+      base.fileMeta.dataURL = evt.target.result;
+      addToHistory(base);
+      renderHistory();
+      alert('Saved image order to history.');
+    };
+    reader.readAsDataURL(uploadedFile);
+    return null; // caller should expect async behavior
+  } else {
+    // PDF or no file: save metadata only
+    return base;
+  }
+}
+
+/* ---------- Generate invoice / preview from record ---------- */
+function generateInvoiceFromRecord(record){
+  // If record is null (async image save), do nothing
+  if(!record && record!==null) return;
+  // If record has fileMeta.dataURL, use it (image). If only metadata for PDF, we can't reconstruct file blob — user must re-upload file before print.
+  // So for PDFs we will warn if file blob is not present.
+  // We'll store a temporary blob URL only for current session (uploadedFile/uploadedURL). For history-loaded PDF metadata, user must re-upload.
+  if(record.fileMeta && record.fileMeta.dataURL){
+    // load image into preview and allow print
+    uploadedURL && URL.revokeObjectURL(uploadedURL);
+    uploadedURL = record.fileMeta.dataURL;
+    uploadedFile = new File([dataURLtoBlob(record.fileMeta.dataURL)], record.fileMeta.name, {type: record.fileMeta.type});
+    fileMeta.textContent = `Loaded from history: ${record.fileMeta.name}`;
+  } else if(record.fileMeta && record.fileMeta.type === 'application/pdf'){
+    // Cannot reconstruct PDF blob from metadata — just load metadata and require the user to re-upload PDF file to print.
+    uploadedFile = null;
+    uploadedURL = null;
+    fileMeta.textContent = `Order loaded (PDF metadata): ${record.fileMeta.name} — re-upload the PDF to print.`;
+  } else {
+    uploadedFile = null; uploadedURL = null; fileMeta.textContent = '';
+  }
+
+  // populate form
+  document.getElementById('name').value = record.name || '';
+  document.getElementById('email').value = record.email || '';
+  document.getElementById('paper').value = record.paper || 'A4';
+  document.getElementById('orient').value = record.orient || 'portrait';
+  document.getElementById('notes').value = record.notes || '';
+
+  // build preview (invoice + file if available)
+  placeholder.style.display = 'none';
+  invoiceArea.style.display = 'block';
+  invoiceArea.innerHTML = '';
+  // invoice HTML
+  const inv = document.createElement('div');
+  inv.style.marginBottom = '12px';
+  inv.innerHTML = invoiceHTML(record.name, record.email, record.paper, record.orient, record.notes);
+  invoiceArea.appendChild(inv);
+
+  // file preview
+  if(uploadedURL){
+    if(record.fileMeta && record.fileMeta.type === 'application/pdf'){
+      const embed = document.createElement('embed'); embed.src = uploadedURL; embed.type='application/pdf'; embed.style.width='100%'; embed.style.height='600px';
+      invoiceArea.appendChild(embed);
+    } else {
+      const img = document.createElement('img'); img.src = uploadedURL; img.style.maxWidth='100%'; invoiceArea.appendChild(img);
+    }
+    printButtons.style.display = 'block';
+  } else {
+    // show note that file must be re-uploaded for PDFs
+    const note = document.createElement('div');
+    note.className='small'; note.style.marginTop='8px';
+    if(record.fileMeta && record.fileMeta.type === 'application/pdf'){
+      note.innerHTML = `PDF was saved as metadata: <strong>${record.fileMeta.name}</strong>. To print file, please re-upload the original PDF.`;
+    } else {
+      note.innerHTML = 'No file data available for preview. If this was an image order, it may be too large to store.';
+    }
+    invoiceArea.appendChild(note);
+    printButtons.style.display = 'none';
+  }
+}
+
+/* ---------- history table click handlers (delegation) ---------- */
+historyBody.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  const idx = Number(btn.dataset.idx);
+  const action = btn.dataset.action;
+  const arr = loadHistory();
+  const item = arr[idx];
+  if(!item) return;
+  if(action === 'load'){
+    generateInvoiceFromRecord(item);
+  } else if(action === 'delete'){
+    if(!confirm('Delete this entry?')) return;
+    arr.splice(idx,1);
+    saveHistoryArray(arr);
+  } else if(action === 'print'){
+    // load then attempt to print. If PDF metadata only, instruct user to re-upload.
+    generateInvoiceFromRecord(item);
+    if(item.fileMeta && item.fileMeta.dataURL){
+      // we can print both pages directly
+      setTimeout(()=> printBothFromCurrent(item.paper,item.orient), 300);
+    } else {
+      alert('This entry contains only PDF metadata. Re-upload the original PDF to print the file. Invoice can still be printed.');
+      // print invoice only
+      setTimeout(()=> printInvoiceOnlyCurrent(item.paper,item.orient), 300);
+    }
+  }
+});
+
+/* ---------- Print helpers (reuse earlier logic) ---------- */
+function pageSizeCSS(paper, orient){
+  const map = { 'A4':'210mm 297mm', 'Letter':'8.5in 11in', 'Legal':'8.5in 14in' };
+  const size = map[paper] || map['A4'];
+  return `@page{size: ${size} ${orient}; margin:10mm;} body{margin:0;padding:8mm;font-family:Arial;color:#111}`;
+}
+function invoiceHTML(name,email,paper,orient,notes){
+  return `<div style="background:#fff;padding:18px;border-radius:6px;border:1px solid #e6eef8">
+      <h2 style="margin:0 0 6px 0">Invoice</h2>
+      <div style="color:#6b7280;margin-bottom:10px">Customer information & order details</div>
+      <table style="width:100%;font-size:14px">
+        <tr><td><strong>Name:</strong> ${escapeHtml(name)}</td><td><strong>Paper:</strong> ${paper} / ${orient}</td></tr>
+        <tr><td><strong>Contact:</strong> ${escapeHtml(email)}</td><td></td></tr>
+      </table>
+      <div style="margin-top:12px"><strong>Notes:</strong><div style="color:#374151">${escapeHtml(notes)}</div></div>
+    </div>`;
+}
+
+function printInvoiceOnlyCurrent(paper,orient){
+  const name = document.getElementById('name').value||'—';
+  const email = document.getElementById('email').value||'—';
+  const notes = document.getElementById('notes').value||'—';
+  const css = pageSizeCSS(paper,orient);
+  const win = window.open('','_blank');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title><style>${css}</style></head><body>${invoiceHTML(name,email,paper,orient,notes)}</body></html>`);
+  win.document.close();
+  setTimeout(()=>{ win.focus(); win.print(); }, 600);
+}
+
+function printBothFromCurrent(paper,orient){
+  const name = document.getElementById('name').value||'—';
+  const email = document.getElementById('email').value||'—';
+  const notes = document.getElementById('notes').value||'—';
+  const css = pageSizeCSS(paper,orient) + `.page{page-break-after:always;box-sizing:border-box;padding:8mm}.file-embed{width:100%;height:100vh;border:0}`;
+  const win = window.open('','_blank');
+  let filePageHtml = '';
+  if(uploadedFile && uploadedFile.type === 'application/pdf'){
+    filePageHtml = `<div class="page"><embed src="${uploadedURL}" type="application/pdf" class="file-embed"></div>`;
+  } else if(uploadedURL){
+    filePageHtml = `<div class="page" style="display:flex;align-items:center;justify-content:center"><img src="${uploadedURL}" style="max-width:100%;max-height:100%;"/></div>`;
+  } else {
+    alert('No file available to print. Re-upload the original file.');
+    return;
+  }
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice + File</title><style>${css}</style></head><body>
+    <div class="page">${invoiceHTML(name,email,paper,orient,notes)}</div>
+    ${filePageHtml}
+  </body></html>`);
+  win.document.close();
+  setTimeout(()=>{ win.focus(); win.print(); }, 900);
+}
+
+/* ---------- Print buttons (current session) ---------- */
+document.getElementById('printFileBtn').addEventListener('click', ()=>{
+  if(!uploadedURL){ alert('No file to print.'); return; }
+  window.open(uploadedURL,'_blank');
+});
+document.getElementById('printInvoiceBtn').addEventListener('click', ()=> {
+  const paper = document.getElementById('paper').value;
+  const orient = document.getElementById('orient').value;
+  printInvoiceOnlyCurrent(paper,orient);
+});
+document.getElementById('printBothBtn').addEventListener('click', ()=> {
+  const paper = document.getElementById('paper').value;
+  const orient = document.getElementById('orient').value;
+  printBothFromCurrent(paper,orient);
+});
+
+/* ---------- Export / Import / Clear History ---------- */
+exportBtn.addEventListener('click', ()=>{
+  const arr = loadHistory();
+  const blob = new Blob([JSON.stringify(arr, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'print_history.json'; document.body.appendChild(a); a.click();
+  a.remove(); URL.revokeObjectURL(url);
+});
+
+importBtn.addEventListener('click', ()=> importFile.click());
+importFile.addEventListener('change', ()=> {
+  const f = importFile.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const arr = JSON.parse(e.target.result);
+      if(!Array.isArray(arr)) throw new Error('Invalid format');
+      saveHistoryArray(arr);
+      alert('History imported.');
+    }catch(err){ alert('Invalid JSON file.'); }
+  };
+  reader.readAsText(f);
+});
+
+clearHistoryBtn.addEventListener('click', ()=>{
+  if(!confirm('Clear all saved history?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  renderHistory();
+});
+
+/* ---------- Storage helpers ---------- */
+function saveHistoryArray(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); renderHistory(); }
+function loadHistory(){ const raw = localStorage.getItem(STORAGE_KEY); if(!raw) return []; try { return JSON.parse(raw); } catch(e){ return []; } }
+
+/* ---------- Initial render ---------- */
+renderHistory();
+
+/* If buildRecord returned null for image save (async), we handled inside; but we also allowed synchronous returns for PDFs. To unify, modify buildRecord to return either a record object or null if async. Already handled. */
+
+/* ---------- Helper: convert dataURL to Blob (for reconstructing File) ---------- */
+function dataURLtoBlob(dataURL){
+  const parts = dataURL.split(',');
+  const meta = parts[0].match(/:(.*?);/);
+  const mime = meta ? meta[1] : '';
+  const binary = atob(parts[1]);
+  const len = binary.length;
+  const u8 = new Uint8Array(len);
+  for(let i=0;i<len;i++) u8[i]=binary.charCodeAt(i);
+  return new Blob([u8], {type:mime});
+}
+
+/* Ensure history shows up on load */
+renderHistory();
+</script>
+</body>
+</html>
